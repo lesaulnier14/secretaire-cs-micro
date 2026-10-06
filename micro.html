@@ -2,7 +2,6 @@
 <html lang="fr">
 
 <head>
-
   <meta charset="UTF-8">
 
   <meta
@@ -15,172 +14,78 @@
   </title>
 
   <style>
-
     body {
-      font-family:
-        Arial,
-        sans-serif;
-
+      font-family: Arial, sans-serif;
       max-width: 700px;
-
-      margin:
-        40px auto;
-
+      margin: 40px auto;
       padding: 20px;
-
-      background:
-        #f6f7f9;
-
-      color:
-        #202124;
+      background: #f6f7f9;
+      color: #202124;
     }
 
     .card {
-      background:
-        white;
-
-      border:
-        1px solid #dadce0;
-
-      border-radius:
-        12px;
-
-      padding:
-        24px;
+      background: white;
+      border: 1px solid #dadce0;
+      border-radius: 12px;
+      padding: 24px;
     }
 
     button {
-      border:
-        none;
-
-      border-radius:
-        8px;
-
-      padding:
-        13px 18px;
-
-      margin-right:
-        8px;
-
-      font-size:
-        16px;
-
-      font-weight:
-        bold;
-
-      cursor:
-        pointer;
-    }
-
-    #btnDemarrer {
-      background:
-        #188038;
-
-      color:
-        white;
-    }
-
-    #btnArreter {
-      background:
-        #d93025;
-
-      color:
-        white;
-    }
-
-    button:disabled {
-      opacity:
-        .4;
-
-      cursor:
-        not-allowed;
+      border: none;
+      border-radius: 8px;
+      padding: 13px 18px;
+      margin-right: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
     }
 
     #etat {
-      margin:
-        20px 0;
-
-      padding:
-        12px;
-
-      border-radius:
-        8px;
-
-      background:
-        #e8f0fe;
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #e8f0fe;
     }
 
-    #participant {
-      font-size:
-        24px;
-
-      font-weight:
-        bold;
-
-      margin:
-        20px 0 10px;
+    .nom {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 20px 0 10px;
     }
 
-    #phrase {
-      padding:
-        15px;
-
-      background:
-        #fffdf5;
-
-      border:
-        1px solid #f9ab00;
-
-      border-radius:
-        8px;
-
-      margin-bottom:
-        20px;
+    .phrase {
+      padding: 15px;
+      background: #fffdf5;
+      border: 1px solid #f9ab00;
+      border-radius: 8px;
+      margin-bottom: 20px;
     }
-
   </style>
 
 </head>
 
-
 <body>
-
 
 <div class="card">
 
-
-  <h1>
-    Identification de la voix
+  <h1 id="titre">
+    Micro
   </h1>
 
+  <div
+    id="participant"
+    class="nom"
+  ></div>
 
-  <div id="participant"></div>
-
-
-  <div id="phrase"></div>
-
-
-  <button
-    id="btnDemarrer"
-    onclick="demarrer()"
-  >
-    🎙 Enregistrer la voix
-  </button>
-
-
-  <button
-    id="btnArreter"
-    onclick="arreter()"
-    disabled
-  >
-    ■ Arrêter
-  </button>
-
+  <div
+    id="phrase"
+    class="phrase"
+    style="display:none"
+  ></div>
 
   <div id="etat">
-    Micro prêt.
+    Initialisation...
   </div>
-
 
 </div>
 
@@ -192,72 +97,120 @@ const params =
     window.location.search
   );
 
+const mode =
+  params.get('mode')
+  || 'identification';
+
 const participantId =
-  params.get(
-    'participantId'
-  )
+  params.get('participantId')
   || '';
 
 const nom =
-  params.get(
-    'nom'
-  )
-  || 'Participant';
+  params.get('nom')
+  || '';
+
+let flux = null;
+let recorder = null;
+let morceaux = [];
+
+let audioFinal = null;
 
 
-document
-  .getElementById(
-    'participant'
-  )
-  .textContent =
-    nom;
+/* =====================================================
+   INITIALISATION
+===================================================== */
+
+window.onload =
+  async function() {
+
+    if (
+      mode === 'identification'
+    ) {
+
+      document
+        .getElementById('titre')
+        .textContent =
+          'Identification de la voix';
+
+      document
+        .getElementById('participant')
+        .textContent =
+          nom || 'Participant';
+
+      document
+        .getElementById('phrase')
+        .style.display =
+          'block';
+
+      document
+        .getElementById('phrase')
+        .textContent =
+          '« '
+          + (nom || 'Participant')
+          + ', je participe à la réunion du Conseil syndical. »';
+
+      await demarrerIdentification();
+
+    } else {
+
+      document
+        .getElementById('titre')
+        .textContent =
+          'Enregistrement de la séance';
+
+      document
+        .getElementById('participant')
+        .textContent =
+          'Réunion du Conseil Syndical';
+
+      document
+        .getElementById('etat')
+        .textContent =
+          'Prêt à enregistrer la séance.';
+
+      /*
+       * On ne démarre pas tout seul.
+       * On attend une commande de l'application principale.
+       */
+    }
+  };
 
 
-document
-  .getElementById(
-    'phrase'
-  )
-  .textContent =
-    '« '
-    + nom
-    + ', je participe à la réunion du Conseil syndical. »';
+/* =====================================================
+   MICRO
+===================================================== */
+
+async function obtenirMicro() {
+
+  if (flux) {
+    return;
+  }
+
+  flux =
+    await navigator
+      .mediaDevices
+      .getUserMedia({
+        audio: true
+      });
+}
 
 
-let flux =
-  null;
+/* =====================================================
+   IDENTIFICATION
+===================================================== */
 
-let recorder =
-  null;
-
-let morceaux =
-  [];
-
-
-async function demarrer() {
-
-  const etat =
-    document.getElementById(
-      'etat'
-    );
+async function demarrerIdentification() {
 
   try {
 
-    flux =
-      await navigator
-        .mediaDevices
-        .getUserMedia({
-          audio: true
-        });
+    await obtenirMicro();
 
-    morceaux =
-      [];
-
+    morceaux = [];
 
     recorder =
       new MediaRecorder(
         flux
       );
-
 
     recorder.ondataavailable =
       function(event) {
@@ -274,38 +227,19 @@ async function demarrer() {
         }
       };
 
-
     recorder.onstop =
-      envoyerVersApplication;
+      function() {
 
+        envoyerIdentification();
+      };
 
     recorder.start();
 
-
     document
-      .getElementById(
-        'btnDemarrer'
-      )
-      .disabled =
-        true;
+      .getElementById('etat')
+      .textContent =
+        '● Enregistrement en cours...';
 
-
-    document
-      .getElementById(
-        'btnArreter'
-      )
-      .disabled =
-        false;
-
-
-    etat.textContent =
-      '● Enregistrement en cours...';
-
-
-    /*
-     * Arrêt automatique
-     * après 5 secondes.
-     */
     setTimeout(
       function() {
 
@@ -323,93 +257,36 @@ async function demarrer() {
       5000
     );
 
-
   } catch (erreur) {
 
-    console.error(
-      erreur
-    );
-
-    etat.textContent =
-      'Erreur microphone : '
-      + erreur.message;
+    document
+      .getElementById('etat')
+      .textContent =
+        'Erreur microphone : '
+        + erreur.message;
   }
 }
 
 
-function arreter() {
-
-  if (
-    recorder
-    &&
-    recorder.state
-    === 'recording'
-  ) {
-
-    recorder.stop();
-  }
-}
-
-
-function envoyerVersApplication() {
+function envoyerIdentification() {
 
   const mimeType =
     recorder.mimeType
     || 'audio/webm';
 
-
   const blob =
     new Blob(
       morceaux,
       {
-        type:
-          mimeType
+        type: mimeType
       }
     );
 
+  libererMicro();
 
-  if (flux) {
-
-    flux
-      .getTracks()
-      .forEach(
-        track =>
-          track.stop()
-      );
-
-    flux =
-      null;
-  }
-
-
-  document
-    .getElementById(
-      'etat'
-    )
-    .textContent =
-      'Enregistrement terminé. Transmission à l’application...';
-
-
-  const lecteur =
-    new FileReader();
-
-
-  lecteur.onloadend =
-    function() {
-
-      /*
-       * data:audio/webm;base64,AAAA...
-       */
-      const contenu =
-        String(
-          lecteur.result
-        );
-
-      const base64 =
-        contenu.includes(',')
-        ? contenu.split(',')[1]
-        : contenu;
-
+  convertirBlobEnBase64(
+    blob,
+    function(base64) {
 
       if (
         window.opener
@@ -437,14 +314,10 @@ function envoyerVersApplication() {
           '*'
         );
 
-
         document
-          .getElementById(
-            'etat'
-          )
+          .getElementById('etat')
           .textContent =
             '✓ Voix enregistrée.';
-
 
         setTimeout(
           function() {
@@ -452,29 +325,349 @@ function envoyerVersApplication() {
             window.close();
 
           },
-          800
+          700
         );
-
 
       } else {
 
         document
-          .getElementById(
-            'etat'
-          )
+          .getElementById('etat')
           .textContent =
-            'Enregistrement terminé, mais l’application principale est introuvable.';
+            'Application principale introuvable.';
       }
-    };
+    }
+  );
+}
 
+
+/* =====================================================
+   SEANCE
+===================================================== */
+
+async function demarrerSeanceAudio() {
+
+  try {
+
+    await obtenirMicro();
+
+    morceaux = [];
+
+    recorder =
+      new MediaRecorder(
+        flux
+      );
+
+    recorder.ondataavailable =
+      function(event) {
+
+        if (
+          event.data
+          &&
+          event.data.size > 0
+        ) {
+
+          morceaux.push(
+            event.data
+          );
+        }
+      };
+
+    recorder.onstop =
+      function() {
+
+        finaliserSeanceAudio();
+      };
+
+    recorder.start(1000);
+
+    document
+      .getElementById('etat')
+      .textContent =
+        '● Séance en cours d’enregistrement';
+
+    envoyerEtat(
+      'AUDIO_SEANCE_DEMARRE'
+    );
+
+  } catch (erreur) {
+
+    document
+      .getElementById('etat')
+      .textContent =
+        'Erreur microphone : '
+        + erreur.message;
+
+    envoyerEtat(
+      'AUDIO_SEANCE_ERREUR',
+      erreur.message
+    );
+  }
+}
+
+
+function pauseSeanceAudio() {
+
+  if (
+    recorder
+    &&
+    recorder.state
+    === 'recording'
+  ) {
+
+    recorder.pause();
+
+    document
+      .getElementById('etat')
+      .textContent =
+        '⏸ Enregistrement en pause';
+
+    envoyerEtat(
+      'AUDIO_SEANCE_PAUSE'
+    );
+  }
+}
+
+
+function reprendreSeanceAudio() {
+
+  if (
+    recorder
+    &&
+    recorder.state
+    === 'paused'
+  ) {
+
+    recorder.resume();
+
+    document
+      .getElementById('etat')
+      .textContent =
+        '● Séance en cours d’enregistrement';
+
+    envoyerEtat(
+      'AUDIO_SEANCE_REPRIS'
+    );
+  }
+}
+
+
+function terminerSeanceAudio() {
+
+  if (
+    !recorder
+  ) {
+    return;
+  }
+
+  if (
+    recorder.state === 'recording'
+    ||
+    recorder.state === 'paused'
+  ) {
+
+    recorder.stop();
+
+    document
+      .getElementById('etat')
+      .textContent =
+        'Finalisation de l’enregistrement...';
+  }
+}
+
+
+function finaliserSeanceAudio() {
+
+  const mimeType =
+    recorder.mimeType
+    || 'audio/webm';
+
+  const blob =
+    new Blob(
+      morceaux,
+      {
+        type: mimeType
+      }
+    );
+
+  audioFinal =
+    blob;
+
+  libererMicro();
+
+  convertirBlobEnBase64(
+    blob,
+    function(base64) {
+
+      if (
+        window.opener
+        &&
+        !window.opener.closed
+      ) {
+
+        window.opener.postMessage(
+          {
+            type:
+              'AUDIO_SEANCE_TERMINE',
+
+            audioBase64:
+              base64,
+
+            mimeType:
+              mimeType,
+
+            taille:
+              blob.size
+          },
+          '*'
+        );
+
+        document
+          .getElementById('etat')
+          .textContent =
+            '✓ Enregistrement de la séance terminé.';
+
+      } else {
+
+        document
+          .getElementById('etat')
+          .textContent =
+            'Application principale introuvable.';
+      }
+    }
+  );
+}
+
+
+/* =====================================================
+   COMMANDES DEPUIS L'APPLICATION
+===================================================== */
+
+window.addEventListener(
+  'message',
+  function(event) {
+
+    const data =
+      event.data;
+
+    if (
+      !data
+      ||
+      !data.type
+    ) {
+      return;
+    }
+
+    switch (
+      data.type
+    ) {
+
+      case 'DEMARRER_SEANCE_AUDIO':
+
+        demarrerSeanceAudio();
+
+        break;
+
+
+      case 'PAUSE_SEANCE_AUDIO':
+
+        pauseSeanceAudio();
+
+        break;
+
+
+      case 'REPRENDRE_SEANCE_AUDIO':
+
+        reprendreSeanceAudio();
+
+        break;
+
+
+      case 'TERMINER_SEANCE_AUDIO':
+
+        terminerSeanceAudio();
+
+        break;
+    }
+  }
+);
+
+
+/* =====================================================
+   OUTILS
+===================================================== */
+
+function envoyerEtat(
+  type,
+  message
+) {
+
+  if (
+    window.opener
+    &&
+    !window.opener.closed
+  ) {
+
+    window.opener.postMessage(
+      {
+        type: type,
+        message:
+          message || ''
+      },
+      '*'
+    );
+  }
+}
+
+
+function convertirBlobEnBase64(
+  blob,
+  callback
+) {
+
+  const lecteur =
+    new FileReader();
+
+  lecteur.onloadend =
+    function() {
+
+      const contenu =
+        String(
+          lecteur.result
+        );
+
+      const base64 =
+        contenu.includes(',')
+        ? contenu.split(',')[1]
+        : contenu;
+
+      callback(
+        base64
+      );
+    };
 
   lecteur.readAsDataURL(
     blob
   );
 }
 
-</script>
 
+function libererMicro() {
+
+  if (flux) {
+
+    flux
+      .getTracks()
+      .forEach(
+        track =>
+          track.stop()
+      );
+
+    flux =
+      null;
+  }
+}
+
+</script>
 
 </body>
 
