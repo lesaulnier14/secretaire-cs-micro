@@ -16,7 +16,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      max-width: 700px;
+      max-width: 760px;
       margin: 40px auto;
       padding: 20px;
       background: #f6f7f9;
@@ -30,21 +30,8 @@
       padding: 24px;
     }
 
-    button {
-      border: none;
-      border-radius: 8px;
-      padding: 13px 18px;
-      margin-right: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    #etat {
-      margin-top: 20px;
-      padding: 12px;
-      border-radius: 8px;
-      background: #e8f0fe;
+    h1 {
+      margin-top: 0;
     }
 
     .nom {
@@ -59,6 +46,36 @@
       border: 1px solid #f9ab00;
       border-radius: 8px;
       margin-bottom: 20px;
+      font-size: 18px;
+    }
+
+    #etat {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #e8f0fe;
+      font-size: 17px;
+    }
+
+    .etat-ok {
+      background: #e6f4ea !important;
+      color: #137333;
+    }
+
+    .etat-erreur {
+      background: #fce8e6 !important;
+      color: #a50e0e;
+    }
+
+    .etat-pause {
+      background: #fff4e5 !important;
+      color: #b06000;
+    }
+
+    .petit {
+      margin-top: 12px;
+      color: #5f6368;
+      font-size: 13px;
     }
   </style>
 
@@ -87,6 +104,11 @@
     Initialisation...
   </div>
 
+  <div
+    id="infoTechnique"
+    class="petit"
+  ></div>
+
 </div>
 
 
@@ -110,10 +132,14 @@ const nom =
   || '';
 
 let flux = null;
+
 let recorder = null;
+
 let morceaux = [];
 
-let audioFinal = null;
+let mimeTypeCourant = '';
+
+let temporisateurIdentification = null;
 
 
 /* =====================================================
@@ -127,53 +153,86 @@ window.onload =
       mode === 'identification'
     ) {
 
-      document
-        .getElementById('titre')
-        .textContent =
-          'Identification de la voix';
+      initialiserModeIdentification();
 
-      document
-        .getElementById('participant')
-        .textContent =
-          nom || 'Participant';
+    } else if (
+      mode === 'seance'
+    ) {
 
-      document
-        .getElementById('phrase')
-        .style.display =
-          'block';
-
-      document
-        .getElementById('phrase')
-        .textContent =
-          '« '
-          + (nom || 'Participant')
-          + ', je participe à la réunion du Conseil syndical. »';
-
-      await demarrerIdentification();
+      initialiserModeSeance();
 
     } else {
 
-      document
-        .getElementById('titre')
-        .textContent =
-          'Enregistrement de la séance';
-
-      document
-        .getElementById('participant')
-        .textContent =
-          'Réunion du Conseil Syndical';
-
-      document
-        .getElementById('etat')
-        .textContent =
-          'Prêt à enregistrer la séance.';
-
-      /*
-       * On ne démarre pas tout seul.
-       * On attend une commande de l'application principale.
-       */
+      afficherErreur(
+        'Mode microphone inconnu : '
+        + mode
+      );
     }
   };
+
+
+function initialiserModeIdentification() {
+
+  document
+    .getElementById('titre')
+    .textContent =
+      'Identification de la voix';
+
+  document
+    .getElementById('participant')
+    .textContent =
+      nom || 'Participant';
+
+  document
+    .getElementById('phrase')
+    .style.display =
+      'block';
+
+  document
+    .getElementById('phrase')
+    .textContent =
+      '« '
+      + (nom || 'Participant')
+      + ', je participe à la réunion du Conseil syndical. »';
+
+  afficherEtat(
+    'Préparation du microphone...'
+  );
+
+  demarrerIdentification();
+}
+
+
+function initialiserModeSeance() {
+
+  document
+    .getElementById('titre')
+    .textContent =
+      'Enregistrement de la séance';
+
+  document
+    .getElementById('participant')
+    .textContent =
+      'Réunion du Conseil Syndical';
+
+  document
+    .getElementById('phrase')
+    .style.display =
+      'none';
+
+  afficherEtat(
+    'Prêt à enregistrer la séance.'
+  );
+
+  /*
+   * Important :
+   * l'application principale attend ce signal
+   * avant d'envoyer DEMARRER_SEANCE_AUDIO.
+   */
+  envoyerEtat(
+    'MICRO_SEANCE_PRET'
+  );
+}
 
 
 /* =====================================================
@@ -183,15 +242,99 @@ window.onload =
 async function obtenirMicro() {
 
   if (flux) {
-    return;
+    return flux;
+  }
+
+  if (
+    !navigator.mediaDevices
+    ||
+    !navigator.mediaDevices.getUserMedia
+  ) {
+
+    throw new Error(
+      'Ce navigateur ne permet pas l’accès au microphone.'
+    );
   }
 
   flux =
     await navigator
       .mediaDevices
       .getUserMedia({
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
+
+  return flux;
+}
+
+
+function choisirMimeTypeAudio() {
+
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4'
+  ];
+
+  for (
+    const type
+    of types
+  ) {
+
+    if (
+      typeof MediaRecorder !== 'undefined'
+      &&
+      MediaRecorder.isTypeSupported(type)
+    ) {
+
+      return type;
+    }
+  }
+
+  return '';
+}
+
+
+function creerRecorder() {
+
+  mimeTypeCourant =
+    choisirMimeTypeAudio();
+
+  const options =
+    mimeTypeCourant
+      ? {
+          mimeType:
+            mimeTypeCourant
+        }
+      : {};
+
+  recorder =
+    new MediaRecorder(
+      flux,
+      options
+    );
+
+  if (
+    recorder.mimeType
+  ) {
+
+    mimeTypeCourant =
+      recorder.mimeType;
+  }
+
+  document
+    .getElementById(
+      'infoTechnique'
+    )
+    .textContent =
+      'Format audio : '
+      + (
+        mimeTypeCourant
+        || 'format par défaut du navigateur'
+      );
 }
 
 
@@ -207,10 +350,8 @@ async function demarrerIdentification() {
 
     morceaux = [];
 
-    recorder =
-      new MediaRecorder(
-        flux
-      );
+    creerRecorder();
+
 
     recorder.ondataavailable =
       function(event) {
@@ -227,66 +368,89 @@ async function demarrerIdentification() {
         }
       };
 
+
     recorder.onstop =
       function() {
+
+        if (
+          temporisateurIdentification
+        ) {
+
+          clearTimeout(
+            temporisateurIdentification
+          );
+
+          temporisateurIdentification =
+            null;
+        }
 
         envoyerIdentification();
       };
 
+
     recorder.start();
 
-    document
-      .getElementById('etat')
-      .textContent =
-        '● Enregistrement en cours...';
 
-    setTimeout(
-      function() {
-
-        if (
-          recorder
-          &&
-          recorder.state
-          === 'recording'
-        ) {
-
-          recorder.stop();
-        }
-
-      },
-      5000
+    afficherEtat(
+      '● Enregistrement de la voix en cours...'
     );
+
+
+    /*
+     * 5 secondes suffisent
+     * pour l'échantillon vocal.
+     */
+    temporisateurIdentification =
+      setTimeout(
+        function() {
+
+          if (
+            recorder
+            &&
+            recorder.state === 'recording'
+          ) {
+
+            recorder.stop();
+          }
+
+        },
+        5000
+      );
 
   } catch (erreur) {
 
-    document
-      .getElementById('etat')
-      .textContent =
-        'Erreur microphone : '
-        + erreur.message;
+    console.error(
+      erreur
+    );
+
+    afficherErreur(
+      'Erreur microphone : '
+      + erreur.message
+    );
   }
 }
 
 
 function envoyerIdentification() {
 
-  const mimeType =
-    recorder.mimeType
-    || 'audio/webm';
-
   const blob =
     new Blob(
       morceaux,
       {
-        type: mimeType
+        type:
+          mimeTypeCourant
+          || 'audio/webm'
       }
     );
 
+
   libererMicro();
+
 
   convertirBlobEnBase64(
     blob,
     function(base64) {
+
 
       if (
         window.opener
@@ -309,15 +473,19 @@ function envoyerIdentification() {
               base64,
 
             mimeType:
-              mimeType
+              blob.type,
+
+            taille:
+              blob.size
           },
           '*'
         );
 
-        document
-          .getElementById('etat')
-          .textContent =
-            '✓ Voix enregistrée.';
+
+        afficherSucces(
+          '✓ Voix enregistrée.'
+        );
+
 
         setTimeout(
           function() {
@@ -325,15 +493,14 @@ function envoyerIdentification() {
             window.close();
 
           },
-          700
+          800
         );
 
       } else {
 
-        document
-          .getElementById('etat')
-          .textContent =
-            'Application principale introuvable.';
+        afficherErreur(
+          'Enregistrement terminé, mais l’application principale est introuvable.'
+        );
       }
     }
   );
@@ -346,16 +513,23 @@ function envoyerIdentification() {
 
 async function demarrerSeanceAudio() {
 
+  if (
+    recorder
+    &&
+    recorder.state !== 'inactive'
+  ) {
+
+    return;
+  }
+
   try {
 
     await obtenirMicro();
 
     morceaux = [];
 
-    recorder =
-      new MediaRecorder(
-        flux
-      );
+    creerRecorder();
+
 
     recorder.ondataavailable =
       function(event) {
@@ -372,18 +546,28 @@ async function demarrerSeanceAudio() {
         }
       };
 
+
     recorder.onstop =
       function() {
 
         finaliserSeanceAudio();
       };
 
-    recorder.start(1000);
 
-    document
-      .getElementById('etat')
-      .textContent =
-        '● Séance en cours d’enregistrement';
+    /*
+     * On demande un morceau toutes les secondes.
+     * Pour le moment, ils restent en mémoire dans
+     * cette page jusqu'à la fin du test.
+     */
+    recorder.start(
+      1000
+    );
+
+
+    afficherEtat(
+      '● Séance en cours d’enregistrement'
+    );
+
 
     envoyerEtat(
       'AUDIO_SEANCE_DEMARRE'
@@ -391,11 +575,16 @@ async function demarrerSeanceAudio() {
 
   } catch (erreur) {
 
-    document
-      .getElementById('etat')
-      .textContent =
-        'Erreur microphone : '
-        + erreur.message;
+    console.error(
+      erreur
+    );
+
+
+    afficherErreur(
+      'Erreur microphone : '
+      + erreur.message
+    );
+
 
     envoyerEtat(
       'AUDIO_SEANCE_ERREUR',
@@ -410,16 +599,16 @@ function pauseSeanceAudio() {
   if (
     recorder
     &&
-    recorder.state
-    === 'recording'
+    recorder.state === 'recording'
   ) {
 
     recorder.pause();
 
-    document
-      .getElementById('etat')
-      .textContent =
-        '⏸ Enregistrement en pause';
+
+    afficherPause(
+      '⏸ Enregistrement en pause'
+    );
+
 
     envoyerEtat(
       'AUDIO_SEANCE_PAUSE'
@@ -433,16 +622,16 @@ function reprendreSeanceAudio() {
   if (
     recorder
     &&
-    recorder.state
-    === 'paused'
+    recorder.state === 'paused'
   ) {
 
     recorder.resume();
 
-    document
-      .getElementById('etat')
-      .textContent =
-        '● Séance en cours d’enregistrement';
+
+    afficherEtat(
+      '● Séance en cours d’enregistrement'
+    );
+
 
     envoyerEtat(
       'AUDIO_SEANCE_REPRIS'
@@ -453,11 +642,16 @@ function reprendreSeanceAudio() {
 
 function terminerSeanceAudio() {
 
-  if (
-    !recorder
-  ) {
+  if (!recorder) {
+
+    envoyerEtat(
+      'AUDIO_SEANCE_ERREUR',
+      'Aucun enregistrement de séance n’est actif.'
+    );
+
     return;
   }
+
 
   if (
     recorder.state === 'recording'
@@ -465,38 +659,36 @@ function terminerSeanceAudio() {
     recorder.state === 'paused'
   ) {
 
-    recorder.stop();
+    afficherEtat(
+      'Finalisation de l’enregistrement...'
+    );
 
-    document
-      .getElementById('etat')
-      .textContent =
-        'Finalisation de l’enregistrement...';
+
+    recorder.stop();
   }
 }
 
 
 function finaliserSeanceAudio() {
 
-  const mimeType =
-    recorder.mimeType
-    || 'audio/webm';
-
   const blob =
     new Blob(
       morceaux,
       {
-        type: mimeType
+        type:
+          mimeTypeCourant
+          || 'audio/webm'
       }
     );
 
-  audioFinal =
-    blob;
 
   libererMicro();
+
 
   convertirBlobEnBase64(
     blob,
     function(base64) {
+
 
       if (
         window.opener
@@ -513,7 +705,7 @@ function finaliserSeanceAudio() {
               base64,
 
             mimeType:
-              mimeType,
+              blob.type,
 
             taille:
               blob.size
@@ -521,17 +713,17 @@ function finaliserSeanceAudio() {
           '*'
         );
 
-        document
-          .getElementById('etat')
-          .textContent =
-            '✓ Enregistrement de la séance terminé.';
+
+        afficherSucces(
+          '✓ Enregistrement de la séance terminé.'
+        );
+
 
       } else {
 
-        document
-          .getElementById('etat')
-          .textContent =
-            'Application principale introuvable.';
+        afficherErreur(
+          'Enregistrement terminé, mais l’application principale est introuvable.'
+        );
       }
     }
   );
@@ -539,7 +731,7 @@ function finaliserSeanceAudio() {
 
 
 /* =====================================================
-   COMMANDES DEPUIS L'APPLICATION
+   COMMANDES DEPUIS L'APPLICATION PRINCIPALE
 ===================================================== */
 
 window.addEventListener(
@@ -549,17 +741,21 @@ window.addEventListener(
     const data =
       event.data;
 
+
     if (
       !data
       ||
       !data.type
     ) {
+
       return;
     }
+
 
     switch (
       data.type
     ) {
+
 
       case 'DEMARRER_SEANCE_AUDIO':
 
@@ -587,13 +783,14 @@ window.addEventListener(
         terminerSeanceAudio();
 
         break;
+
     }
   }
 );
 
 
 /* =====================================================
-   OUTILS
+   COMMUNICATION AVEC INDEX.HTML
 ===================================================== */
 
 function envoyerEtat(
@@ -609,7 +806,9 @@ function envoyerEtat(
 
     window.opener.postMessage(
       {
-        type: type,
+        type:
+          type,
+
         message:
           message || ''
       },
@@ -619,6 +818,10 @@ function envoyerEtat(
 }
 
 
+/* =====================================================
+   CONVERSION AUDIO
+===================================================== */
+
 function convertirBlobEnBase64(
   blob,
   callback
@@ -626,6 +829,7 @@ function convertirBlobEnBase64(
 
   const lecteur =
     new FileReader();
+
 
   lecteur.onloadend =
     function() {
@@ -635,21 +839,48 @@ function convertirBlobEnBase64(
           lecteur.result
         );
 
+
+      const positionVirgule =
+        contenu.indexOf(
+          ','
+        );
+
+
       const base64 =
-        contenu.includes(',')
-        ? contenu.split(',')[1]
+
+        positionVirgule >= 0
+
+        ? contenu.substring(
+            positionVirgule + 1
+          )
+
         : contenu;
+
 
       callback(
         base64
       );
     };
 
+
+  lecteur.onerror =
+    function() {
+
+      afficherErreur(
+        'Impossible de convertir l’enregistrement audio.'
+      );
+    };
+
+
   lecteur.readAsDataURL(
     blob
   );
 }
 
+
+/* =====================================================
+   LIBÉRATION DU MICROPHONE
+===================================================== */
 
 function libererMicro() {
 
@@ -658,14 +889,134 @@ function libererMicro() {
     flux
       .getTracks()
       .forEach(
-        track =>
-          track.stop()
+        function(track) {
+
+          track.stop();
+
+        }
       );
+
 
     flux =
       null;
   }
 }
+
+
+/* =====================================================
+   AFFICHAGE
+===================================================== */
+
+function afficherEtat(
+  texte
+) {
+
+  const zone =
+    document.getElementById(
+      'etat'
+    );
+
+
+  zone.className =
+    '';
+
+
+  zone.textContent =
+    texte;
+}
+
+
+function afficherSucces(
+  texte
+) {
+
+  const zone =
+    document.getElementById(
+      'etat'
+    );
+
+
+  zone.className =
+    'etat-ok';
+
+
+  zone.textContent =
+    texte;
+}
+
+
+function afficherErreur(
+  texte
+) {
+
+  const zone =
+    document.getElementById(
+      'etat'
+    );
+
+
+  zone.className =
+    'etat-erreur';
+
+
+  zone.textContent =
+    texte;
+}
+
+
+function afficherPause(
+  texte
+) {
+
+  const zone =
+    document.getElementById(
+      'etat'
+    );
+
+
+  zone.className =
+    'etat-pause';
+
+
+  zone.textContent =
+    texte;
+}
+
+
+/* =====================================================
+   SÉCURITÉ FERMETURE
+===================================================== */
+
+window.addEventListener(
+  'beforeunload',
+  function() {
+
+    if (
+      recorder
+      &&
+      (
+        recorder.state === 'recording'
+        ||
+        recorder.state === 'paused'
+      )
+    ) {
+
+      try {
+
+        recorder.stop();
+
+      } catch (e) {
+
+        console.error(
+          e
+        );
+      }
+    }
+
+
+    libererMicro();
+  }
+);
 
 </script>
 
