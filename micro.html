@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Micro - Secrétaire IA du CS</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f6f7f9;
+      color: #202124;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #dadce0;
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 13px 18px;
+      margin-right: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #btnDemarrer {
+      background: #188038;
+      color: white;
+    }
+
+    #btnArreter {
+      background: #d93025;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    #etat {
+      margin: 20px 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: #e8f0fe;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+
+    <h1>Test microphone</h1>
+
+    <p>
+      Secrétaire IA du Conseil Syndical
+    </p>
+
+    <button
+      id="btnDemarrer"
+      onclick="demarrer()"
+    >
+      🎙 Démarrer l'enregistrement
+    </button>
+
+    <button
+      id="btnArreter"
+      onclick="arreter()"
+      disabled
+    >
+      ■ Arrêter
+    </button>
+
+    <div id="etat">
+      Micro non démarré.
+    </div>
+
+    <audio
+      id="lecture"
+      controls
+      style="display:none"
+    ></audio>
+
+  </div>
+
+
+<script>
+
+let flux = null;
+let recorder = null;
+let morceaux = [];
+
+
+async function demarrer() {
+
+  const etat =
+    document.getElementById('etat');
+
+  try {
+
+    flux =
+      await navigator.mediaDevices.getUserMedia({
+        audio: true
+      });
+
+    morceaux = [];
+
+    recorder =
+      new MediaRecorder(flux);
+
+    recorder.ondataavailable =
+      function(event) {
+
+        if (
+          event.data
+          &&
+          event.data.size > 0
+        ) {
+
+          morceaux.push(
+            event.data
+          );
+        }
+      };
+
+
+    recorder.onstop =
+      function() {
+
+        const blob =
+          new Blob(
+            morceaux,
+            {
+              type:
+                recorder.mimeType
+                || 'audio/webm'
+            }
+          );
+
+        const url =
+          URL.createObjectURL(blob);
+
+        const audio =
+          document.getElementById(
+            'lecture'
+          );
+
+        audio.src =
+          url;
+
+        audio.style.display =
+          'block';
+
+        etat.textContent =
+          'Enregistrement terminé. Vous pouvez l’écouter ci-dessous.';
+
+
+        if (flux) {
+
+          flux
+            .getTracks()
+            .forEach(
+              track =>
+                track.stop()
+            );
+
+          flux = null;
+        }
+      };
+
+
+    recorder.start();
+
+
+    document
+      .getElementById(
+        'btnDemarrer'
+      )
+      .disabled =
+        true;
+
+
+    document
+      .getElementById(
+        'btnArreter'
+      )
+      .disabled =
+        false;
+
+
+    etat.textContent =
+      '● Enregistrement en cours...';
+
+
+  } catch (erreur) {
+
+    console.error(erreur);
+
+    etat.textContent =
+      'Erreur microphone : '
+      + erreur.name
+      + ' - '
+      + erreur.message;
+  }
+}
+
+
+function arreter() {
+
+  if (
+    recorder
+    &&
+    recorder.state === 'recording'
+  ) {
+
+    recorder.stop();
+  }
+
+
+  document
+    .getElementById(
+      'btnDemarrer'
+    )
+    .disabled =
+      false;
+
+
+  document
+    .getElementById(
+      'btnArreter'
+    )
+    .disabled =
+      true;
+}
+
+</script>
+
+</body>
+</html>
