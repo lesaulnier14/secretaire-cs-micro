@@ -2,6 +2,7 @@
 <html lang="fr">
 
 <head>
+
   <meta charset="UTF-8">
 
   <meta
@@ -9,125 +10,254 @@
     content="width=device-width, initial-scale=1"
   >
 
-  <title>Micro - Secrétaire IA du CS</title>
+  <title>
+    Micro - Secrétaire IA du CS
+  </title>
 
   <style>
+
     body {
-      font-family: Arial, sans-serif;
+      font-family:
+        Arial,
+        sans-serif;
+
       max-width: 700px;
-      margin: 40px auto;
+
+      margin:
+        40px auto;
+
       padding: 20px;
-      background: #f6f7f9;
-      color: #202124;
+
+      background:
+        #f6f7f9;
+
+      color:
+        #202124;
     }
 
     .card {
-      background: white;
-      border: 1px solid #dadce0;
-      border-radius: 12px;
-      padding: 24px;
+      background:
+        white;
+
+      border:
+        1px solid #dadce0;
+
+      border-radius:
+        12px;
+
+      padding:
+        24px;
     }
 
     button {
-      border: none;
-      border-radius: 8px;
-      padding: 13px 18px;
-      margin-right: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
+      border:
+        none;
+
+      border-radius:
+        8px;
+
+      padding:
+        13px 18px;
+
+      margin-right:
+        8px;
+
+      font-size:
+        16px;
+
+      font-weight:
+        bold;
+
+      cursor:
+        pointer;
     }
 
     #btnDemarrer {
-      background: #188038;
-      color: white;
+      background:
+        #188038;
+
+      color:
+        white;
     }
 
     #btnArreter {
-      background: #d93025;
-      color: white;
+      background:
+        #d93025;
+
+      color:
+        white;
     }
 
     button:disabled {
-      opacity: .4;
-      cursor: not-allowed;
+      opacity:
+        .4;
+
+      cursor:
+        not-allowed;
     }
 
     #etat {
-      margin: 20px 0;
-      padding: 12px;
-      border-radius: 8px;
-      background: #e8f0fe;
+      margin:
+        20px 0;
+
+      padding:
+        12px;
+
+      border-radius:
+        8px;
+
+      background:
+        #e8f0fe;
     }
 
-    audio {
-      width: 100%;
-      margin-top: 20px;
+    #participant {
+      font-size:
+        24px;
+
+      font-weight:
+        bold;
+
+      margin:
+        20px 0 10px;
     }
+
+    #phrase {
+      padding:
+        15px;
+
+      background:
+        #fffdf5;
+
+      border:
+        1px solid #f9ab00;
+
+      border-radius:
+        8px;
+
+      margin-bottom:
+        20px;
+    }
+
   </style>
+
 </head>
+
 
 <body>
 
-  <div class="card">
 
-    <h1>Test microphone</h1>
+<div class="card">
 
-    <p>
-      Secrétaire IA du Conseil Syndical
-    </p>
 
-    <button
-      id="btnDemarrer"
-      onclick="demarrer()"
-    >
-      🎙 Démarrer l'enregistrement
-    </button>
+  <h1>
+    Identification de la voix
+  </h1>
 
-    <button
-      id="btnArreter"
-      onclick="arreter()"
-      disabled
-    >
-      ■ Arrêter
-    </button>
 
-    <div id="etat">
-      Micro non démarré.
-    </div>
+  <div id="participant"></div>
 
-    <audio
-      id="lecture"
-      controls
-      style="display:none"
-    ></audio>
 
+  <div id="phrase"></div>
+
+
+  <button
+    id="btnDemarrer"
+    onclick="demarrer()"
+  >
+    🎙 Enregistrer la voix
+  </button>
+
+
+  <button
+    id="btnArreter"
+    onclick="arreter()"
+    disabled
+  >
+    ■ Arrêter
+  </button>
+
+
+  <div id="etat">
+    Micro prêt.
   </div>
+
+
+</div>
 
 
 <script>
 
-let flux = null;
-let recorder = null;
-let morceaux = [];
+const params =
+  new URLSearchParams(
+    window.location.search
+  );
+
+const participantId =
+  params.get(
+    'participantId'
+  )
+  || '';
+
+const nom =
+  params.get(
+    'nom'
+  )
+  || 'Participant';
+
+
+document
+  .getElementById(
+    'participant'
+  )
+  .textContent =
+    nom;
+
+
+document
+  .getElementById(
+    'phrase'
+  )
+  .textContent =
+    '« '
+    + nom
+    + ', je participe à la réunion du Conseil syndical. »';
+
+
+let flux =
+  null;
+
+let recorder =
+  null;
+
+let morceaux =
+  [];
 
 
 async function demarrer() {
 
   const etat =
-    document.getElementById('etat');
+    document.getElementById(
+      'etat'
+    );
 
   try {
 
     flux =
-      await navigator.mediaDevices.getUserMedia({
-        audio: true
-      });
+      await navigator
+        .mediaDevices
+        .getUserMedia({
+          audio: true
+        });
 
-    morceaux = [];
+    morceaux =
+      [];
+
 
     recorder =
-      new MediaRecorder(flux);
+      new MediaRecorder(
+        flux
+      );
+
 
     recorder.ondataavailable =
       function(event) {
@@ -146,48 +276,7 @@ async function demarrer() {
 
 
     recorder.onstop =
-      function() {
-
-        const blob =
-          new Blob(
-            morceaux,
-            {
-              type:
-                recorder.mimeType
-                || 'audio/webm'
-            }
-          );
-
-        const url =
-          URL.createObjectURL(blob);
-
-        const audio =
-          document.getElementById(
-            'lecture'
-          );
-
-        audio.src =
-          url;
-
-        audio.style.display =
-          'block';
-
-        etat.textContent =
-          'Enregistrement terminé. Vous pouvez l’écouter ci-dessous.';
-
-
-        if (flux) {
-
-          flux
-            .getTracks()
-            .forEach(
-              track =>
-                track.stop()
-            );
-
-          flux = null;
-        }
-      };
+      envoyerVersApplication;
 
 
     recorder.start();
@@ -213,14 +302,36 @@ async function demarrer() {
       '● Enregistrement en cours...';
 
 
+    /*
+     * Arrêt automatique
+     * après 5 secondes.
+     */
+    setTimeout(
+      function() {
+
+        if (
+          recorder
+          &&
+          recorder.state
+          === 'recording'
+        ) {
+
+          recorder.stop();
+        }
+
+      },
+      5000
+    );
+
+
   } catch (erreur) {
 
-    console.error(erreur);
+    console.error(
+      erreur
+    );
 
     etat.textContent =
       'Erreur microphone : '
-      + erreur.name
-      + ' - '
       + erreur.message;
   }
 }
@@ -231,30 +342,140 @@ function arreter() {
   if (
     recorder
     &&
-    recorder.state === 'recording'
+    recorder.state
+    === 'recording'
   ) {
 
     recorder.stop();
+  }
+}
+
+
+function envoyerVersApplication() {
+
+  const mimeType =
+    recorder.mimeType
+    || 'audio/webm';
+
+
+  const blob =
+    new Blob(
+      morceaux,
+      {
+        type:
+          mimeType
+      }
+    );
+
+
+  if (flux) {
+
+    flux
+      .getTracks()
+      .forEach(
+        track =>
+          track.stop()
+      );
+
+    flux =
+      null;
   }
 
 
   document
     .getElementById(
-      'btnDemarrer'
+      'etat'
     )
-    .disabled =
-      false;
+    .textContent =
+      'Enregistrement terminé. Transmission à l’application...';
 
 
-  document
-    .getElementById(
-      'btnArreter'
-    )
-    .disabled =
-      true;
+  const lecteur =
+    new FileReader();
+
+
+  lecteur.onloadend =
+    function() {
+
+      /*
+       * data:audio/webm;base64,AAAA...
+       */
+      const contenu =
+        String(
+          lecteur.result
+        );
+
+      const base64 =
+        contenu.includes(',')
+        ? contenu.split(',')[1]
+        : contenu;
+
+
+      if (
+        window.opener
+        &&
+        !window.opener.closed
+      ) {
+
+        window.opener.postMessage(
+          {
+            type:
+              'VOIX_CS_ENREGISTREE',
+
+            participantId:
+              participantId,
+
+            nom:
+              nom,
+
+            audioBase64:
+              base64,
+
+            mimeType:
+              mimeType
+          },
+          '*'
+        );
+
+
+        document
+          .getElementById(
+            'etat'
+          )
+          .textContent =
+            '✓ Voix enregistrée.';
+
+
+        setTimeout(
+          function() {
+
+            window.close();
+
+          },
+          800
+        );
+
+
+      } else {
+
+        document
+          .getElementById(
+            'etat'
+          )
+          .textContent =
+            'Enregistrement terminé, mais l’application principale est introuvable.';
+      }
+    };
+
+
+  lecteur.readAsDataURL(
+    blob
+  );
 }
 
 </script>
 
+
 </body>
+
 </html>
