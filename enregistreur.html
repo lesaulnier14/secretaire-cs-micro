@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Enregistreur CS</title>
+
+  <style>
+
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 32px;
+    }
+
+    button {
+      font-size: 18px;
+      padding: 15px 25px;
+      margin-right: 10px;
+    }
+
+    #statut {
+      margin-top: 25px;
+      padding: 20px;
+      background: #f2f2f2;
+      font-size: 18px;
+    }
+
+  </style>
+</head>
+
+
+<body>
+
+  <h1>Enregistreur du Conseil Syndical</h1>
+
+  <p>
+    Réunion :
+    <strong id="reunion"></strong>
+  </p>
+
+  <button
+    id="btnDemarrer"
+    type="button"
+  >
+    DÉMARRER LE TEST
+  </button>
+
+  <div id="statut">
+    Prêt.
+  </div>
+
+
+<script>
+
+const SERVICE_URL =
+  'https://script.google.com/macros/s/AKfycbwVZZINoOgIYOeHMAaB0OSm9L0AnBsKdxtfDTMOW3ybrHFcl0VEgi3P82KmooIgva1A6A/exec';
+
+const params =
+  new URLSearchParams(
+    window.location.search
+  );
+
+const reunionId =
+  params.get('reunionId')
+  || 'TEST_CS';
+
+document
+  .getElementById('reunion')
+  .textContent =
+    reunionId;
+
+let fluxMicro = null;
+
+let recorder = null;
+
+let morceaux = [];
+
+
+document
+  .getElementById('btnDemarrer')
+  .addEventListener(
+    'click',
+    demarrerTest
+  );
+
+
+async function demarrerTest() {
+
+  const bouton =
+    document.getElementById(
+      'btnDemarrer'
+    );
+
+  bouton.disabled = true;
+
+  try {
+
+    fluxMicro =
+      await navigator
+        .mediaDevices
+        .getUserMedia({
+          audio: true
+        });
+
+    morceaux = [];
+
+    recorder =
+      new MediaRecorder(
+        fluxMicro
+      );
+
+    recorder.addEventListener(
+      'dataavailable',
+      function(event) {
+
+        if (
+          event.data
+          &&
+          event.data.size
+        ) {
+          morceaux.push(
+            event.data
+          );
+        }
+      }
+    );
+
+
+    recorder.addEventListener(
+      'stop',
+      terminerEtEnvoyer
+    );
+
+
+    recorder.start();
+
+    afficherStatut(
+      '● Enregistrement pendant 15 secondes...'
+    );
+
+
+    setTimeout(
+      function() {
+
+        if (
+          recorder
+          &&
+          recorder.state
+          !== 'inactive'
+        ) {
+          recorder.stop();
+        }
+
+      },
+      15000
+    );
+
+  }
+
+  catch (err) {
+
+    afficherStatut(
+      'Erreur microphone : '
+      + err.message
+    );
+
+    bouton.disabled = false;
+  }
+}
+
+
+async function terminerEtEnvoyer() {
+
+  const blob =
+    new Blob(
+      morceaux,
+      {
+        type:
+          recorder.mimeType
+          || 'audio/webm'
+      }
+    );
+
+  fluxMicro
+    .getTracks()
+    .forEach(
+      function(track) {
+        track.stop();
+      }
+    );
+
+  afficherStatut(
+    'Enregistrement terminé. Envoi vers Drive...'
+  );
+
+
+  const base64 =
+    await blobVersBase64(
+      blob
+    );
+
+
+  const donnees = {
+
+    reunionId:
+      reunionId,
+
+    numeroSegment:
+      1,
+
+    mimeType:
+      blob.type
+      || 'audio/webm',
+
+    audioBase64:
+      base64
+  };
+
+
+  try {
+
+    await fetch(
+      SERVICE_URL,
+      {
+        method: 'POST',
+
+        mode: 'no-cors',
+
+        headers: {
+          'Content-Type':
+            'text/plain;charset=utf-8'
+        },
+
+        body:
+          JSON.stringify(
+            donnees
+          )
+      }
+    );
+
+    afficherStatut(
+      '✓ Audio envoyé. Vérifiez maintenant Google Drive.'
+    );
+
+  }
+
+  catch (err) {
+
+    afficherStatut(
+      'Erreur envoi : '
+      + err.message
+    );
+  }
+
+
+  document
+    .getElementById(
+      'btnDemarrer'
+    )
+    .disabled = false;
+}
+
+
+function blobVersBase64(blob) {
+
+  return new Promise(
+    function(resolve, reject) {
+
+      const reader =
+        new FileReader();
+
+      reader.onloadend =
+        function() {
+
+          const resultat =
+            String(
+              reader.result
+            );
+
+          resolve(
+            resultat.split(',')[1]
+          );
+        };
+
+      reader.onerror =
+        reject;
+
+      reader.readAsDataURL(
+        blob
+      );
+    }
+  );
+}
+
+
+function afficherStatut(texte) {
+
+  document
+    .getElementById(
+      'statut'
+    )
+    .textContent =
+      texte;
+}
+
+</script>
+
+</body>
+</html>
