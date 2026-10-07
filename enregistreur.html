@@ -25,16 +25,49 @@
     }
 
     button {
-      font-size: 18px;
-      padding: 15px 25px;
-      margin-right: 10px;
+      font-size: 17px;
+      padding: 14px 22px;
+      margin: 8px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
 
     #statut {
-      margin-top: 25px;
+      margin-top: 20px;
       padding: 20px;
       background: #f2f2f2;
       font-size: 18px;
+    }
+
+    #niveauFond {
+      height: 22px;
+      margin-top: 15px;
+      background: #ddd;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    #niveau {
+      height: 100%;
+      width: 0%;
+      background: #28a745;
+      transition: width 0.08s;
+    }
+
+    #infos {
+      margin-top: 20px;
+      line-height: 1.8;
+    }
+
+    .alerte {
+      background: #fff3cd;
+      padding: 15px;
+      margin-top: 15px;
+      display: none;
     }
 
   </style>
@@ -43,29 +76,93 @@
 
 <body>
 
-  <h1>Enregistreur du Conseil Syndical</h1>
+  <h1>
+    Enregistreur du Conseil Syndical
+  </h1>
 
   <p>
     Réunion :
     <strong id="reunion"></strong>
   </p>
 
+
+  <button
+    id="btnVerifier"
+    type="button"
+  >
+    VÉRIFIER LE MICRO
+  </button>
+
   <button
     id="btnDemarrer"
     type="button"
+    disabled
   >
-    DÉMARRER LE TEST
+    DÉMARRER L'ENREGISTREMENT
   </button>
 
+  <button
+    id="btnTerminer"
+    type="button"
+    disabled
+  >
+    TERMINER
+  </button>
+
+
+  <div id="niveauFond">
+    <div id="niveau"></div>
+  </div>
+
+
+  <div
+    id="alerteMicro"
+    class="alerte"
+  >
+    Vérifiez dans Chrome :
+    Paramètres du site → Microphone → Autoriser.
+
+    Si nécessaire, vérifiez également dans macOS :
+    Réglages Système → Confidentialité et sécurité → Microphone → Google Chrome.
+  </div>
+
+
   <div id="statut">
-    Prêt.
+    Microphone non vérifié.
+  </div>
+
+
+  <div id="infos">
+
+    Durée :
+    <strong id="duree">00:00:00</strong>
+
+    <br>
+
+    Segments sauvegardés :
+    <strong id="segments">0</strong>
+
   </div>
 
 
 <script>
 
+/*
+ * URL DE VOTRE WEB APP APPS SCRIPT
+ */
+
 const SERVICE_URL =
-  'https://script.google.com/macros/s/AKfycbwVZZINoOgIYOeHMAaB0OSm9L0AnBsKdxtfDTMOW3ybrHFcl0VEgi3P82KmooIgva1A6A/exec';
+  'COLLEZ_ICI_VOTRE_URL_EXEC';
+
+
+/*
+ * Durée d'un segment :
+ * 60 000 ms = 1 minute
+ */
+
+const DUREE_SEGMENT =
+  60000;
+
 
 const params =
   new URLSearchParams(
@@ -76,81 +173,367 @@ const reunionId =
   params.get('reunionId')
   || 'TEST_CS';
 
+
 document
   .getElementById('reunion')
   .textContent =
     reunionId;
 
+
 let fluxMicro = null;
+
+let contexteAudio = null;
+
+let analyseur = null;
+
+let animationNiveau = null;
 
 let recorder = null;
 
 let morceaux = [];
+
+let numeroSegment = 0;
+
+let enregistrementActif = false;
+
+let rotationTimer = null;
+
+let chronoTimer = null;
+
+let debutEnregistrement = null;
+
+let niveauMaxDetecte = 0;
+
+
+
+document
+  .getElementById('btnVerifier')
+  .addEventListener(
+    'click',
+    verifierMicro
+  );
 
 
 document
   .getElementById('btnDemarrer')
   .addEventListener(
     'click',
-    demarrerTest
+    demarrerEnregistrement
   );
 
 
-async function demarrerTest() {
+document
+  .getElementById('btnTerminer')
+  .addEventListener(
+    'click',
+    terminerEnregistrement
+  );
 
-  const bouton =
-    document.getElementById(
-      'btnDemarrer'
-    );
 
-  bouton.disabled = true;
+
+async function verifierMicro() {
+
+  afficherStatut(
+    'Vérification du microphone...'
+  );
+
+  document
+    .getElementById(
+      'alerteMicro'
+    )
+    .style.display =
+      'none';
 
   try {
 
-    fluxMicro =
-      await navigator
-        .mediaDevices
-        .getUserMedia({
-          audio: true
-        });
+    if (!fluxMicro) {
 
-    morceaux = [];
+      fluxMicro =
+        await navigator
+          .mediaDevices
+          .getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
 
-    recorder =
-      new MediaRecorder(
-        fluxMicro
-      );
+    }
 
-    recorder.addEventListener(
-      'dataavailable',
-      function(event) {
 
-        if (
-          event.data
-          &&
-          event.data.size
-        ) {
-          morceaux.push(
-            event.data
-          );
-        }
+    contexteAudio =
+      new AudioContext();
+
+    const source =
+      contexteAudio
+        .createMediaStreamSource(
+          fluxMicro
+        );
+
+    analyseur =
+      contexteAudio
+        .createAnalyser();
+
+    analyseur.fftSize =
+      256;
+
+    source.connect(
+      analyseur
+    );
+
+    niveauMaxDetecte =
+      0;
+
+    afficherNiveau();
+
+
+    afficherStatut(
+      'Parlez pendant quelques secondes pour vérifier le niveau du micro.'
+    );
+
+
+    setTimeout(
+      controlerNiveauMicro,
+      3500
+    );
+
+  }
+
+  catch (err) {
+
+    document
+      .getElementById(
+        'alerteMicro'
+      )
+      .style.display =
+        'block';
+
+    afficherStatut(
+      'Microphone indisponible : '
+      + err.message
+    );
+
+    alert(
+      'Le microphone n’est pas disponible.\n\n'
+      + 'Vérifiez dans Chrome :\n'
+      + 'Paramètres du site → Microphone → Autoriser.\n\n'
+      + 'Puis vérifiez dans macOS :\n'
+      + 'Réglages Système → Confidentialité et sécurité → Microphone.'
+    );
+  }
+
+}
+
+
+
+function afficherNiveau() {
+
+  if (!analyseur) {
+    return;
+  }
+
+  const data =
+    new Uint8Array(
+      analyseur.frequencyBinCount
+    );
+
+  analyseur.getByteFrequencyData(
+    data
+  );
+
+  let total = 0;
+
+  for (
+    let i = 0;
+    i < data.length;
+    i++
+  ) {
+    total += data[i];
+  }
+
+  const moyenne =
+    total / data.length;
+
+  const pourcentage =
+    Math.min(
+      100,
+      moyenne * 2.5
+    );
+
+  if (
+    pourcentage >
+    niveauMaxDetecte
+  ) {
+    niveauMaxDetecte =
+      pourcentage;
+  }
+
+  document
+    .getElementById(
+      'niveau'
+    )
+    .style.width =
+      pourcentage + '%';
+
+  animationNiveau =
+    requestAnimationFrame(
+      afficherNiveau
+    );
+}
+
+
+
+function controlerNiveauMicro() {
+
+  if (
+    niveauMaxDetecte < 2
+  ) {
+
+    document
+      .getElementById(
+        'alerteMicro'
+      )
+      .style.display =
+        'block';
+
+    afficherStatut(
+      'Aucun son détecté.'
+    );
+
+    document
+      .getElementById(
+        'btnDemarrer'
+      )
+      .disabled =
+        true;
+
+    alert(
+      'Aucun son n’a été détecté.\n\n'
+      + 'Vérifiez le microphone sélectionné dans Chrome et dans les réglages Son de macOS.'
+    );
+
+    return;
+  }
+
+
+  afficherStatut(
+    'Microphone OK. Vous pouvez démarrer la réunion.'
+  );
+
+  document
+    .getElementById(
+      'btnDemarrer'
+    )
+    .disabled =
+      false;
+}
+
+
+
+function demarrerEnregistrement() {
+
+  if (
+    !fluxMicro
+    ||
+    enregistrementActif
+  ) {
+    return;
+  }
+
+
+  enregistrementActif =
+    true;
+
+  numeroSegment =
+    0;
+
+  debutEnregistrement =
+    new Date();
+
+
+  document
+    .getElementById(
+      'btnVerifier'
+    )
+    .disabled =
+      true;
+
+  document
+    .getElementById(
+      'btnDemarrer'
+    )
+    .disabled =
+      true;
+
+  document
+    .getElementById(
+      'btnTerminer'
+    )
+    .disabled =
+      false;
+
+
+  demarrerChrono();
+
+  demarrerNouveauSegment();
+
+
+  afficherStatut(
+    '● Enregistrement en cours.'
+  );
+}
+
+
+
+function demarrerNouveauSegment() {
+
+  if (
+    !enregistrementActif
+  ) {
+    return;
+  }
+
+
+  morceaux = [];
+
+  recorder =
+    new MediaRecorder(
+      fluxMicro,
+      {
+        mimeType:
+          choisirMimeType()
       }
     );
 
 
-    recorder.addEventListener(
-      'stop',
-      terminerEtEnvoyer
-    );
+  recorder.addEventListener(
+    'dataavailable',
+    function(event) {
+
+      if (
+        event.data
+        &&
+        event.data.size > 0
+      ) {
+        morceaux.push(
+          event.data
+        );
+      }
+    }
+  );
 
 
-    recorder.start();
+  recorder.addEventListener(
+    'stop',
+    traiterSegmentTermine
+  );
 
-    afficherStatut(
-      '● Enregistrement pendant 15 secondes...'
-    );
+
+  recorder.start();
 
 
+  rotationTimer =
     setTimeout(
       function() {
 
@@ -164,24 +547,35 @@ async function demarrerTest() {
         }
 
       },
-      15000
+      DUREE_SEGMENT
     );
-
-  }
-
-  catch (err) {
-
-    afficherStatut(
-      'Erreur microphone : '
-      + err.message
-    );
-
-    bouton.disabled = false;
-  }
 }
 
 
-async function terminerEtEnvoyer() {
+
+async function traiterSegmentTermine() {
+
+  clearTimeout(
+    rotationTimer
+  );
+
+
+  if (
+    !morceaux.length
+  ) {
+
+    if (
+      enregistrementActif
+    ) {
+      demarrerNouveauSegment();
+    }
+
+    return;
+  }
+
+
+  numeroSegment++;
+
 
   const blob =
     new Blob(
@@ -193,18 +587,86 @@ async function terminerEtEnvoyer() {
       }
     );
 
-  fluxMicro
-    .getTracks()
-    .forEach(
-      function(track) {
-        track.stop();
-      }
-    );
 
   afficherStatut(
-    'Enregistrement terminé. Envoi vers Drive...'
+    'Sauvegarde du segment '
+    + numeroSegment
+    + '...'
   );
 
+
+  try {
+
+    await envoyerSegment(
+      blob,
+      numeroSegment
+    );
+
+
+    document
+      .getElementById(
+        'segments'
+      )
+      .textContent =
+        numeroSegment;
+
+
+    if (
+      enregistrementActif
+    ) {
+
+      afficherStatut(
+        '● Enregistrement en cours. Segment '
+        + numeroSegment
+        + ' sauvegardé.'
+      );
+
+
+      demarrerNouveauSegment();
+
+    }
+
+    else {
+
+      afficherStatut(
+        '✓ Enregistrement terminé. '
+        + numeroSegment
+        + ' segment(s) sauvegardé(s).'
+      );
+
+      arreterMicro();
+
+    }
+
+  }
+
+  catch (err) {
+
+    afficherStatut(
+      'ERREUR DE SAUVEGARDE : '
+      + err.message
+    );
+
+    alert(
+      'Un segment audio n’a pas pu être sauvegardé.\n\n'
+      + err.message
+    );
+
+
+    if (
+      enregistrementActif
+    ) {
+      demarrerNouveauSegment();
+    }
+  }
+}
+
+
+
+async function envoyerSegment(
+  blob,
+  numero
+) {
 
   const base64 =
     await blobVersBase64(
@@ -218,7 +680,7 @@ async function terminerEtEnvoyer() {
       reunionId,
 
     numeroSegment:
-      1,
+      numero,
 
     mimeType:
       blob.type
@@ -226,51 +688,275 @@ async function terminerEtEnvoyer() {
 
     audioBase64:
       base64
+
   };
 
 
-  try {
+  /*
+   * no-cors :
+   * on ne peut pas lire la réponse,
+   * mais l'envoi fonctionne.
+   */
 
-    await fetch(
-      SERVICE_URL,
-      {
-        method: 'POST',
+  await fetch(
+    SERVICE_URL,
+    {
+      method:
+        'POST',
 
-        mode: 'no-cors',
+      mode:
+        'no-cors',
 
-        headers: {
-          'Content-Type':
-            'text/plain;charset=utf-8'
-        },
+      headers: {
+        'Content-Type':
+          'text/plain;charset=utf-8'
+      },
 
-        body:
-          JSON.stringify(
-            donnees
-          )
-      }
-    );
+      body:
+        JSON.stringify(
+          donnees
+        )
+    }
+  );
+}
 
-    afficherStatut(
-      '✓ Audio envoyé. Vérifiez maintenant Google Drive.'
-    );
 
+
+function terminerEnregistrement() {
+
+  if (
+    !enregistrementActif
+  ) {
+    return;
   }
 
-  catch (err) {
 
-    afficherStatut(
-      'Erreur envoi : '
-      + err.message
-    );
+  if (
+    !confirm(
+      'Confirmer la fin de l’enregistrement ?'
+    )
+  ) {
+    return;
   }
+
+
+  enregistrementActif =
+    false;
+
+
+  clearTimeout(
+    rotationTimer
+  );
 
 
   document
     .getElementById(
-      'btnDemarrer'
+      'btnTerminer'
     )
-    .disabled = false;
+    .disabled =
+      true;
+
+
+  afficherStatut(
+    'Finalisation du dernier segment...'
+  );
+
+
+  if (
+    recorder
+    &&
+    recorder.state
+    !== 'inactive'
+  ) {
+
+    recorder.stop();
+
+  }
+
+  else {
+
+    arreterMicro();
+
+  }
 }
+
+
+
+function choisirMimeType() {
+
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4'
+  ];
+
+
+  for (
+    let i = 0;
+    i < types.length;
+    i++
+  ) {
+
+    if (
+      MediaRecorder
+        .isTypeSupported(
+          types[i]
+        )
+    ) {
+      return types[i];
+    }
+  }
+
+
+  return '';
+}
+
+
+
+function demarrerChrono() {
+
+  if (
+    chronoTimer
+  ) {
+    clearInterval(
+      chronoTimer
+    );
+  }
+
+
+  chronoTimer =
+    setInterval(
+      function() {
+
+        if (
+          !debutEnregistrement
+        ) {
+          return;
+        }
+
+
+        const secondes =
+          Math.floor(
+            (
+              new Date()
+              -
+              debutEnregistrement
+            )
+            /
+            1000
+          );
+
+
+        const heures =
+          String(
+            Math.floor(
+              secondes / 3600
+            )
+          )
+          .padStart(
+            2,
+            '0'
+          );
+
+
+        const minutes =
+          String(
+            Math.floor(
+              (
+                secondes % 3600
+              )
+              /
+              60
+            )
+          )
+          .padStart(
+            2,
+            '0'
+          );
+
+
+        const secs =
+          String(
+            secondes % 60
+          )
+          .padStart(
+            2,
+            '0'
+          );
+
+
+        document
+          .getElementById(
+            'duree'
+          )
+          .textContent =
+            heures
+            + ':'
+            + minutes
+            + ':'
+            + secs;
+
+      },
+      1000
+    );
+}
+
+
+
+function arreterMicro() {
+
+  if (
+    chronoTimer
+  ) {
+    clearInterval(
+      chronoTimer
+    );
+
+    chronoTimer =
+      null;
+  }
+
+
+  if (
+    animationNiveau
+  ) {
+    cancelAnimationFrame(
+      animationNiveau
+    );
+
+    animationNiveau =
+      null;
+  }
+
+
+  if (
+    fluxMicro
+  ) {
+
+    fluxMicro
+      .getTracks()
+      .forEach(
+        function(track) {
+          track.stop();
+        }
+      );
+
+    fluxMicro =
+      null;
+  }
+
+
+  if (
+    contexteAudio
+  ) {
+
+    contexteAudio.close();
+
+    contexteAudio =
+      null;
+  }
+}
+
 
 
 function blobVersBase64(blob) {
@@ -281,6 +967,7 @@ function blobVersBase64(blob) {
       const reader =
         new FileReader();
 
+
       reader.onloadend =
         function() {
 
@@ -290,12 +977,15 @@ function blobVersBase64(blob) {
             );
 
           resolve(
-            resultat.split(',')[1]
+            resultat
+              .split(',')[1]
           );
         };
 
+
       reader.onerror =
         reject;
+
 
       reader.readAsDataURL(
         blob
@@ -303,6 +993,7 @@ function blobVersBase64(blob) {
     }
   );
 }
+
 
 
 function afficherStatut(texte) {
