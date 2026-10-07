@@ -2,6 +2,7 @@
 <html lang="fr">
 
 <head>
+
   <meta charset="UTF-8">
 
   <meta
@@ -71,6 +72,7 @@
     }
 
   </style>
+
 </head>
 
 
@@ -93,6 +95,7 @@
     VÉRIFIER LE MICRO
   </button>
 
+
   <button
     id="btnDemarrer"
     type="button"
@@ -101,12 +104,21 @@
     DÉMARRER L'ENREGISTREMENT
   </button>
 
+
   <button
     id="btnTerminer"
     type="button"
     disabled
   >
     TERMINER
+  </button>
+
+
+  <button
+    id="btnFermer"
+    type="button"
+  >
+    FERMER LA FENÊTRE
   </button>
 
 
@@ -119,11 +131,16 @@
     id="alerteMicro"
     class="alerte"
   >
+
     Vérifiez dans Chrome :
     Paramètres du site → Microphone → Autoriser.
 
+    <br><br>
+
     Si nécessaire, vérifiez également dans macOS :
-    Réglages Système → Confidentialité et sécurité → Microphone → Google Chrome.
+    Réglages Système → Confidentialité et sécurité →
+    Microphone → Google Chrome.
+
   </div>
 
 
@@ -135,39 +152,48 @@
   <div id="infos">
 
     Durée :
-    <strong id="duree">00:00:00</strong>
+    <strong id="duree">
+      00:00:00
+    </strong>
 
     <br>
 
     Segments sauvegardés :
-    <strong id="segments">0</strong>
+    <strong id="segments">
+      0
+    </strong>
 
   </div>
 
 
+
 <script>
 
-/*
- * URL DE VOTRE WEB APP APPS SCRIPT
- */
+/* =====================================================
+   CONFIGURATION
+===================================================== */
 
 const SERVICE_URL =
-  'https://script.google.com/macros/s/AKfycbwVZZINoOgIYOeHMAaB0OSm9L0AnBsKdxtfDTMOW3ybrHFcl0VEgi3P82KmooIgva1A6A/exec ';
+  'https://script.google.com/macros/s/AKfycbwVZZINoOgIYOeHMAaB0OSm9L0AnBsKdxtfDTMOW3ybrHFcl0VEgi3P82KmooIgva1A6A/exec';
 
 
 /*
- * Durée d'un segment :
  * 60 000 ms = 1 minute
  */
-
 const DUREE_SEGMENT =
   60000;
 
+
+
+/* =====================================================
+   RÉUNION
+===================================================== */
 
 const params =
   new URLSearchParams(
     window.location.search
   );
+
 
 const reunionId =
   params.get('reunionId')
@@ -179,6 +205,11 @@ document
   .textContent =
     reunionId;
 
+
+
+/* =====================================================
+   VARIABLES
+===================================================== */
 
 let fluxMicro = null;
 
@@ -196,6 +227,8 @@ let numeroSegment = 0;
 
 let enregistrementActif = false;
 
+let finalisationEnCours = false;
+
 let rotationTimer = null;
 
 let chronoTimer = null;
@@ -205,6 +238,10 @@ let debutEnregistrement = null;
 let niveauMaxDetecte = 0;
 
 
+
+/* =====================================================
+   BOUTONS
+===================================================== */
 
 document
   .getElementById('btnVerifier')
@@ -230,6 +267,52 @@ document
   );
 
 
+document
+  .getElementById('btnFermer')
+  .addEventListener(
+    'click',
+    fermerFenetre
+  );
+
+
+
+/* =====================================================
+   FERMETURE
+===================================================== */
+
+function fermerFenetre() {
+
+  if (enregistrementActif) {
+
+    alert(
+      'L’enregistrement est en cours.\n\n'
+      + 'Cliquez d’abord sur TERMINER.'
+    );
+
+    return;
+  }
+
+
+  if (finalisationEnCours) {
+
+    alert(
+      'Le dernier segment est encore en cours de sauvegarde.\n\n'
+      + 'Attendez le message indiquant que '
+      + 'l’enregistrement est terminé.'
+    );
+
+    return;
+  }
+
+
+  window.close();
+}
+
+
+
+/* =====================================================
+   VÉRIFICATION MICRO
+===================================================== */
 
 async function verifierMicro() {
 
@@ -237,12 +320,14 @@ async function verifierMicro() {
     'Vérification du microphone...'
   );
 
+
   document
     .getElementById(
       'alerteMicro'
     )
     .style.display =
       'none';
+
 
   try {
 
@@ -252,12 +337,31 @@ async function verifierMicro() {
         await navigator
           .mediaDevices
           .getUserMedia({
+
             audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
+
+              echoCancellation:
+                true,
+
+              noiseSuppression:
+                true,
+
+              autoGainControl:
+                true
+
             }
+
           });
+
+    }
+
+
+    if (contexteAudio) {
+
+      await contexteAudio.close();
+
+      contexteAudio =
+        null;
 
     }
 
@@ -265,31 +369,38 @@ async function verifierMicro() {
     contexteAudio =
       new AudioContext();
 
+
     const source =
       contexteAudio
         .createMediaStreamSource(
           fluxMicro
         );
 
+
     analyseur =
       contexteAudio
         .createAnalyser();
 
+
     analyseur.fftSize =
       256;
+
 
     source.connect(
       analyseur
     );
 
+
     niveauMaxDetecte =
       0;
+
 
     afficherNiveau();
 
 
     afficherStatut(
-      'Parlez pendant quelques secondes pour vérifier le niveau du micro.'
+      'Parlez pendant quelques secondes '
+      + 'pour vérifier le niveau du micro.'
     );
 
 
@@ -309,23 +420,31 @@ async function verifierMicro() {
       .style.display =
         'block';
 
+
     afficherStatut(
       'Microphone indisponible : '
       + err.message
     );
+
 
     alert(
       'Le microphone n’est pas disponible.\n\n'
       + 'Vérifiez dans Chrome :\n'
       + 'Paramètres du site → Microphone → Autoriser.\n\n'
       + 'Puis vérifiez dans macOS :\n'
-      + 'Réglages Système → Confidentialité et sécurité → Microphone.'
+      + 'Réglages Système → Confidentialité et sécurité '
+      + '→ Microphone.'
     );
+
   }
 
 }
 
 
+
+/* =====================================================
+   NIVEAU MICRO
+===================================================== */
 
 function afficherNiveau() {
 
@@ -333,27 +452,39 @@ function afficherNiveau() {
     return;
   }
 
+
   const data =
     new Uint8Array(
       analyseur.frequencyBinCount
     );
 
+
   analyseur.getByteFrequencyData(
     data
   );
 
-  let total = 0;
+
+  let total =
+    0;
+
 
   for (
     let i = 0;
     i < data.length;
     i++
   ) {
-    total += data[i];
+
+    total +=
+      data[i];
+
   }
 
+
   const moyenne =
-    total / data.length;
+    total
+    /
+    data.length;
+
 
   const pourcentage =
     Math.min(
@@ -361,28 +492,40 @@ function afficherNiveau() {
       moyenne * 2.5
     );
 
+
   if (
-    pourcentage >
+    pourcentage
+    >
     niveauMaxDetecte
   ) {
+
     niveauMaxDetecte =
       pourcentage;
+
   }
+
 
   document
     .getElementById(
       'niveau'
     )
     .style.width =
-      pourcentage + '%';
+      pourcentage
+      + '%';
+
 
   animationNiveau =
     requestAnimationFrame(
       afficherNiveau
     );
+
 }
 
 
+
+/* =====================================================
+   CONTRÔLE MICRO
+===================================================== */
 
 function controlerNiveauMicro() {
 
@@ -397,9 +540,11 @@ function controlerNiveauMicro() {
       .style.display =
         'block';
 
+
     afficherStatut(
       'Aucun son détecté.'
     );
+
 
     document
       .getElementById(
@@ -408,12 +553,16 @@ function controlerNiveauMicro() {
       .disabled =
         true;
 
+
     alert(
       'Aucun son n’a été détecté.\n\n'
-      + 'Vérifiez le microphone sélectionné dans Chrome et dans les réglages Son de macOS.'
+      + 'Vérifiez le microphone sélectionné '
+      + 'dans Chrome et dans les réglages Son de macOS.'
     );
 
+
     return;
+
   }
 
 
@@ -421,15 +570,21 @@ function controlerNiveauMicro() {
     'Microphone OK. Vous pouvez démarrer la réunion.'
   );
 
+
   document
     .getElementById(
       'btnDemarrer'
     )
     .disabled =
       false;
+
 }
 
 
+
+/* =====================================================
+   DÉMARRAGE
+===================================================== */
 
 function demarrerEnregistrement() {
 
@@ -438,15 +593,31 @@ function demarrerEnregistrement() {
     ||
     enregistrementActif
   ) {
+
     return;
+
   }
 
 
   enregistrementActif =
     true;
 
+
+  finalisationEnCours =
+    false;
+
+
   numeroSegment =
     0;
+
+
+  document
+    .getElementById(
+      'segments'
+    )
+    .textContent =
+      '0';
+
 
   debutEnregistrement =
     new Date();
@@ -459,12 +630,14 @@ function demarrerEnregistrement() {
     .disabled =
       true;
 
+
   document
     .getElementById(
       'btnDemarrer'
     )
     .disabled =
       true;
+
 
   document
     .getElementById(
@@ -476,39 +649,67 @@ function demarrerEnregistrement() {
 
   demarrerChrono();
 
+
   demarrerNouveauSegment();
 
 
   afficherStatut(
     '● Enregistrement en cours.'
   );
+
 }
 
 
+
+/* =====================================================
+   NOUVEAU SEGMENT
+===================================================== */
 
 function demarrerNouveauSegment() {
 
   if (
     !enregistrementActif
   ) {
+
     return;
+
   }
 
 
-  morceaux = [];
+  morceaux =
+    [];
 
-  recorder =
-    new MediaRecorder(
-      fluxMicro,
-      {
-        mimeType:
-          choisirMimeType()
-      }
-    );
+
+  const mimeType =
+    choisirMimeType();
+
+
+  if (mimeType) {
+
+    recorder =
+      new MediaRecorder(
+        fluxMicro,
+        {
+          mimeType:
+            mimeType
+        }
+      );
+
+  }
+
+  else {
+
+    recorder =
+      new MediaRecorder(
+        fluxMicro
+      );
+
+  }
 
 
   recorder.addEventListener(
     'dataavailable',
+
     function(event) {
 
       if (
@@ -516,11 +717,15 @@ function demarrerNouveauSegment() {
         &&
         event.data.size > 0
       ) {
+
         morceaux.push(
           event.data
         );
+
       }
+
     }
+
   );
 
 
@@ -535,6 +740,7 @@ function demarrerNouveauSegment() {
 
   rotationTimer =
     setTimeout(
+
       function() {
 
         if (
@@ -543,15 +749,24 @@ function demarrerNouveauSegment() {
           recorder.state
           !== 'inactive'
         ) {
+
           recorder.stop();
+
         }
 
       },
+
       DUREE_SEGMENT
+
     );
+
 }
 
 
+
+/* =====================================================
+   FIN D'UN SEGMENT
+===================================================== */
 
 async function traiterSegmentTermine() {
 
@@ -567,14 +782,36 @@ async function traiterSegmentTermine() {
     if (
       enregistrementActif
     ) {
+
       demarrerNouveauSegment();
+
     }
 
+    else {
+
+      finalisationEnCours =
+        false;
+
+      arreterMicro();
+
+    }
+
+
     return;
+
   }
 
 
   numeroSegment++;
+
+
+  const numeroActuel =
+    numeroSegment;
+
+
+  const mimeType =
+    recorder.mimeType
+    || 'audio/webm';
 
 
   const blob =
@@ -582,15 +819,14 @@ async function traiterSegmentTermine() {
       morceaux,
       {
         type:
-          recorder.mimeType
-          || 'audio/webm'
+          mimeType
       }
     );
 
 
   afficherStatut(
     'Sauvegarde du segment '
-    + numeroSegment
+    + numeroActuel
     + '...'
   );
 
@@ -599,7 +835,7 @@ async function traiterSegmentTermine() {
 
     await envoyerSegment(
       blob,
-      numeroSegment
+      numeroActuel
     );
 
 
@@ -608,7 +844,7 @@ async function traiterSegmentTermine() {
         'segments'
       )
       .textContent =
-        numeroSegment;
+        numeroActuel;
 
 
     if (
@@ -617,7 +853,7 @@ async function traiterSegmentTermine() {
 
       afficherStatut(
         '● Enregistrement en cours. Segment '
-        + numeroSegment
+        + numeroActuel
         + ' sauvegardé.'
       );
 
@@ -628,11 +864,17 @@ async function traiterSegmentTermine() {
 
     else {
 
+      finalisationEnCours =
+        false;
+
+
       afficherStatut(
         '✓ Enregistrement terminé. '
-        + numeroSegment
-        + ' segment(s) sauvegardé(s).'
+        + numeroActuel
+        + ' segment(s) sauvegardé(s). '
+        + 'Vous pouvez fermer cette fenêtre.'
       );
+
 
       arreterMicro();
 
@@ -647,6 +889,7 @@ async function traiterSegmentTermine() {
       + err.message
     );
 
+
     alert(
       'Un segment audio n’a pas pu être sauvegardé.\n\n'
       + err.message
@@ -656,12 +899,27 @@ async function traiterSegmentTermine() {
     if (
       enregistrementActif
     ) {
+
       demarrerNouveauSegment();
+
     }
+
+    else {
+
+      finalisationEnCours =
+        false;
+
+    }
+
   }
+
 }
 
 
+
+/* =====================================================
+   ENVOI DU SEGMENT
+===================================================== */
 
 async function envoyerSegment(
   blob,
@@ -694,13 +952,14 @@ async function envoyerSegment(
 
   /*
    * no-cors :
-   * on ne peut pas lire la réponse,
-   * mais l'envoi fonctionne.
+   * l'envoi fonctionne mais le navigateur
+   * ne peut pas lire la réponse du serveur.
    */
 
   await fetch(
     SERVICE_URL,
     {
+
       method:
         'POST',
 
@@ -708,26 +967,36 @@ async function envoyerSegment(
         'no-cors',
 
       headers: {
+
         'Content-Type':
           'text/plain;charset=utf-8'
+
       },
 
       body:
         JSON.stringify(
           donnees
         )
+
     }
   );
+
 }
 
 
+
+/* =====================================================
+   TERMINER
+===================================================== */
 
 function terminerEnregistrement() {
 
   if (
     !enregistrementActif
   ) {
+
     return;
+
   }
 
 
@@ -736,12 +1005,18 @@ function terminerEnregistrement() {
       'Confirmer la fin de l’enregistrement ?'
     )
   ) {
+
     return;
+
   }
 
 
   enregistrementActif =
     false;
+
+
+  finalisationEnCours =
+    true;
 
 
   clearTimeout(
@@ -758,7 +1033,7 @@ function terminerEnregistrement() {
 
 
   afficherStatut(
-    'Finalisation du dernier segment...'
+    'Finalisation et sauvegarde du dernier segment...'
   );
 
 
@@ -775,19 +1050,37 @@ function terminerEnregistrement() {
 
   else {
 
+    finalisationEnCours =
+      false;
+
     arreterMicro();
 
+
+    afficherStatut(
+      '✓ Enregistrement terminé. '
+      + 'Vous pouvez fermer cette fenêtre.'
+    );
+
   }
+
 }
 
 
 
+/* =====================================================
+   TYPE AUDIO
+===================================================== */
+
 function choisirMimeType() {
 
   const types = [
+
     'audio/webm;codecs=opus',
+
     'audio/webm',
+
     'audio/mp4'
+
   ];
 
 
@@ -803,35 +1096,48 @@ function choisirMimeType() {
           types[i]
         )
     ) {
+
       return types[i];
+
     }
+
   }
 
 
   return '';
+
 }
 
 
+
+/* =====================================================
+   CHRONOMÈTRE
+===================================================== */
 
 function demarrerChrono() {
 
   if (
     chronoTimer
   ) {
+
     clearInterval(
       chronoTimer
     );
+
   }
 
 
   chronoTimer =
     setInterval(
+
       function() {
 
         if (
           !debutEnregistrement
         ) {
+
           return;
+
         }
 
 
@@ -850,7 +1156,9 @@ function demarrerChrono() {
         const heures =
           String(
             Math.floor(
-              secondes / 3600
+              secondes
+              /
+              3600
             )
           )
           .padStart(
@@ -863,7 +1171,9 @@ function demarrerChrono() {
           String(
             Math.floor(
               (
-                secondes % 3600
+                secondes
+                %
+                3600
               )
               /
               60
@@ -877,7 +1187,9 @@ function demarrerChrono() {
 
         const secs =
           String(
-            secondes % 60
+            secondes
+            %
+            60
           )
           .padStart(
             2,
@@ -897,35 +1209,48 @@ function demarrerChrono() {
             + secs;
 
       },
+
       1000
+
     );
+
 }
 
 
+
+/* =====================================================
+   ARRÊT MICRO
+===================================================== */
 
 function arreterMicro() {
 
   if (
     chronoTimer
   ) {
+
     clearInterval(
       chronoTimer
     );
 
+
     chronoTimer =
       null;
+
   }
 
 
   if (
     animationNiveau
   ) {
+
     cancelAnimationFrame(
       animationNiveau
     );
 
+
     animationNiveau =
       null;
+
   }
 
 
@@ -936,13 +1261,19 @@ function arreterMicro() {
     fluxMicro
       .getTracks()
       .forEach(
+
         function(track) {
+
           track.stop();
+
         }
+
       );
+
 
     fluxMicro =
       null;
+
   }
 
 
@@ -952,17 +1283,53 @@ function arreterMicro() {
 
     contexteAudio.close();
 
+
     contexteAudio =
       null;
+
   }
+
+
+  document
+    .getElementById(
+      'niveau'
+    )
+    .style.width =
+      '0%';
+
 }
 
 
 
-function blobVersBase64(blob) {
+/* =====================================================
+   OUTILS
+===================================================== */
+
+function afficherStatut(
+  texte
+) {
+
+  document
+    .getElementById(
+      'statut'
+    )
+    .textContent =
+      texte;
+
+}
+
+
+
+function blobVersBase64(
+  blob
+) {
 
   return new Promise(
-    function(resolve, reject) {
+
+    function(
+      resolve,
+      reject
+    ) {
 
       const reader =
         new FileReader();
@@ -972,41 +1339,78 @@ function blobVersBase64(blob) {
         function() {
 
           const resultat =
+            reader.result;
+
+
+          const base64 =
             String(
-              reader.result
-            );
+              resultat
+            )
+            .split(',')[1];
+
 
           resolve(
-            resultat
-              .split(',')[1]
+            base64
           );
+
         };
 
 
       reader.onerror =
-        reject;
+        function() {
+
+          reject(
+            new Error(
+              'Impossible de convertir le segment audio.'
+            )
+          );
+
+        };
 
 
       reader.readAsDataURL(
         blob
       );
+
     }
+
   );
+
 }
 
 
 
-function afficherStatut(texte) {
+/* =====================================================
+   PROTECTION CONTRE FERMETURE ACCIDENTELLE
+===================================================== */
 
-  document
-    .getElementById(
-      'statut'
-    )
-    .textContent =
-      texte;
-}
+window.addEventListener(
+  'beforeunload',
+
+  function(event) {
+
+    if (
+      !enregistrementActif
+      &&
+      !finalisationEnCours
+    ) {
+
+      return;
+
+    }
+
+
+    event.preventDefault();
+
+    event.returnValue =
+      '';
+
+  }
+
+);
 
 </script>
 
 </body>
+
 </html>
