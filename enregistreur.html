@@ -114,6 +114,7 @@
   </button>
 
 
+  <button id="btnRetenter" type="button" style="display:none" onclick="retenterSegments()">RÉESSAYER LES SEGMENTS NON CONFIRMÉS</button>
   <button
     id="btnFermer"
     type="button"
@@ -173,8 +174,8 @@
    CONFIGURATION
 ===================================================== */
 
-const SERVICE_URL =
-  'https://script.google.com/macros/s/AKfycbwVZZINoOgIYOeHMAaB0OSm9L0AnBsKdxtfDTMOW3ybrHFcl0VEgi3P82KmooIgva1A6A/exec';
+const SERVICE_URL = new URLSearchParams(location.search).get('serviceUrl') || '';
+const AUDIO_TOKEN = new URLSearchParams(location.search).get('audioToken') || '';
 
 
 /*
@@ -236,6 +237,11 @@ let chronoTimer = null;
 let debutEnregistrement = null;
 
 let niveauMaxDetecte = 0;
+let segmentsEnAttente = [];
+let erreurTransfert = false;
+function verifierConfiguration(){
+  if(!SERVICE_URL || !AUDIO_TOKEN){afficherStatut('ERREUR : lancez cet enregistreur depuis la WebApp principale.');return false;}return true;
+}
 
 
 
@@ -293,6 +299,7 @@ function fermerFenetre() {
   }
 
 
+  if (segmentsEnAttente.length) {alert('Des segments ne sont pas confirmés dans Drive. Cliquez sur RÉESSAYER avant de fermer.');return;}
   if (finalisationEnCours) {
 
     alert(
@@ -588,6 +595,7 @@ function controlerNiveauMicro() {
 
 function demarrerEnregistrement() {
 
+  if (!verifierConfiguration()) return;
   if (
     !fluxMicro
     ||
@@ -609,6 +617,8 @@ function demarrerEnregistrement() {
 
   numeroSegment =
     0;
+  segmentsEnAttente = [];
+  erreurTransfert = false;
 
 
   document
@@ -869,7 +879,7 @@ async function traiterSegmentTermine() {
 
 
       afficherStatut(
-        '✓ Enregistrement terminé. '
+        (segmentsEnAttente.length ? '⚠ Fin avec segments non confirmés. ' : '✓ Enregistrement terminé. ')
         + numeroActuel
         + ' segment(s) sauvegardé(s). '
         + 'Vous pouvez fermer cette fenêtre.'
@@ -884,6 +894,9 @@ async function traiterSegmentTermine() {
 
   catch (err) {
 
+    segmentsEnAttente.push({blob:blob, numero:numeroActuel});
+    document.getElementById('btnRetenter').style.display='inline-block';
+    erreurTransfert = true;
     afficherStatut(
       'ERREUR DE SAUVEGARDE : '
       + err.message
@@ -921,69 +934,41 @@ async function traiterSegmentTermine() {
    ENVOI DU SEGMENT
 ===================================================== */
 
-async function envoyerSegment(
-  blob,
-  numero
-) {
-
-  const base64 =
-    await blobVersBase64(
-      blob
-    );
-
-
-  const donnees = {
-
-    reunionId:
-      reunionId,
-
-    numeroSegment:
-      numero,
-
-    mimeType:
-      blob.type
-      || 'audio/webm',
-
-    audioBase64:
-      base64
-
-  };
-
-
-  /*
-   * no-cors :
-   * l'envoi fonctionne mais le navigateur
-   * ne peut pas lire la réponse du serveur.
-   */
-
-  await fetch(
-    SERVICE_URL,
-    {
-
-      method:
-        'POST',
-
-      mode:
-        'no-cors',
-
-      headers: {
-
-        'Content-Type':
-          'text/plain;charset=utf-8'
-
-      },
-
-      body:
-        JSON.stringify(
-          donnees
-        )
-
-    }
-  );
-
+async function empreinteSHA256(blob) {
+  const buffer=await blob.arrayBuffer();
+  const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',buffer));
+  return Array.from(bytes).map(x=>x.toString(16).padStart(2,'0')).join('');
 }
-
-
+function verifierSauvegarde(numero, sha256) {
+  return new Promise((resolve,reject)=>{
+    const callback='csAudioCallback_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+    const script=document.createElement('script');
+    const t=setTimeout(()=>finish(new Error('Confirmation Drive indisponible (délai dépassé).')),20000);
+    function finish(err,value){clearTimeout(t);delete window[callback];script.remove();if(err)reject(err);else resolve(value);}
+    window[callback]=function(data){finish(null,data);};
+    script.onerror=()=>finish(new Error('Impossible de vérifier la présence du segment dans Drive.'));
+    const url=new URL(SERVICE_URL);
+    [['action','audio_status'],['callback',callback],['token',AUDIO_TOKEN],['reunionId',reunionId],['numeroSegment',String(numero)],['sha256',sha256]].forEach(([k,v])=>url.searchParams.set(k,v));
+    script.src=url.toString();document.head.appendChild(script);
+  });
+}
+async function envoyerSegment(blob,numero){
+  if(!verifierConfiguration())throw new Error('Configuration absente.');
+  const sha256=await empreinteSHA256(blob);
+  const base64=await blobVersBase64(blob);
+  const donnees={action:'audio_segment',token:AUDIO_TOKEN,reunionId:reunionId,
+    numeroSegment:numero,mimeType:blob.type||'audio/webm',sha256:sha256,audioBase64:base64};
+  await fetch(SERVICE_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(donnees)});
+  // no-cors ne confirme PAS la réception ; on interroge Drive indépendamment.
+  for(let i=0;i<10;i++){
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const status=await verifierSauvegarde(numero,sha256);
+    if(!status.ok)throw new Error(status.erreur||'Erreur vérification Drive.');
+    if(status.confirmed)return status;
+    if(status.conflict)throw new Error('Un segment du même numéro existe déjà avec un autre contenu.');
+  }
+  throw new Error('Segment non confirmé dans Google Drive après 15 secondes.');
+}
 
 /* =====================================================
    TERMINER
