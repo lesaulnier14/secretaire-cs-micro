@@ -1394,6 +1394,18 @@ window.addEventListener(
 
 );
 
+
+// Informations de séance pour l'en-tête fixe de la WebApp.
+function cs325NotifierParent(){
+  if(!window.opener||window.opener.closed)return;
+  try {
+    window.opener.postMessage({type:'CS_ENREGISTREUR_ETAT',reunionId:reunionId,
+      actif:!!enregistrementActif,etat:enregistrementActif?'en cours':(finalisationEnCours?'finalisation':'arrêté'),
+      dureeSecondes:debutEnregistrement?Math.floor((Date.now()-new Date(debutEnregistrement).getTime())/1000):0,
+      segmentCourant:numeroSegment,erreurTransfert:!!erreurTransfert},'*');
+  } catch(e) { /* la WebApp peut être fermée */ }
+}
+setInterval(cs325NotifierParent,2000);
 </script>
 
 </body>
